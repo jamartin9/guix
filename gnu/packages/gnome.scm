@@ -3103,7 +3103,7 @@ configuring CUPS.")
              #t)))))
     (propagated-inputs
      `(;; In Requires of libnotify.pc.
-       ("gdk-pixbuf" ,gdk-pixbuf)
+       ("gdk-pixbuf" ,gdk-pixbuf+svg)
        ("glib" ,glib)))
     (inputs
      `(("gtk+" ,gtk+)
