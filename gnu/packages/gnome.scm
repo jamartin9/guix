@@ -5744,7 +5744,7 @@ throughout GNOME for API documentation).")
        ("pkg-config" ,pkg-config)))
     (propagated-inputs
      `(("glib" ,glib)
-       ("gdk-pixbuf" ,gdk-pixbuf)
+       ("gdk-pixbuf" ,gdk-pixbuf+svg)
        ("libx11" ,libx11)
        ("libxext" ,libxext)
        ("libxfixes" ,libxfixes)
