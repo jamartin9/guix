@@ -7498,7 +7498,6 @@ capabilities.")
      `(;; The test suite is disabled as the internal 'cargo-test-macro' and
        ;; 'cargo-test-support' crates are not included in the release.
        #:tests? #f
-       #:rust ,rust-1.52        ;transitively inherited from rust-sized-chunks
        #:cargo-inputs
        (("rust-anyhow" ,rust-anyhow-1)
         ("rust-atty" ,rust-atty-0.2)
@@ -45680,8 +45679,7 @@ variants in pure Rust.")
          "07ix5fsdnpf2xsb0k5rbiwlmsicm2237fcx7blirp9p7pljr5mhn"))))
     (build-system cargo-build-system)
     (arguments
-     `(#:rust ,rust-1.52                ;requires the "if in const fn" feature
-       #:cargo-inputs
+     `(#:cargo-inputs
        (("rust-arbitrary" ,rust-arbitrary-1)
         ("rust-array-ops" ,rust-array-ops-0.1)
         ("rust-bitmaps" ,rust-bitmaps-2)
@@ -59074,8 +59072,7 @@ configuration file and/or environment variables.")
          "0gsgcs1nn38r40973l6zr1v4d85f4s9qyl32n5f20jphf5z9ba1w"))))
     (build-system cargo-build-system)
     (arguments
-     `(#:rust ,rust-1.52                ;for rust-sized-chunks
-       #:cargo-inputs
+     `(#:cargo-inputs
        (("rust-arbitrary" ,rust-arbitrary-0.4)
         ("rust-bitmaps" ,rust-bitmaps-2)
         ("rust-proptest" ,rust-proptest-0.9)
