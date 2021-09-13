@@ -869,6 +869,19 @@ the GNOME desktop environment.")
        (apply execl (string-append #$dbus "/bin/dbus-daemon")
               (program-arguments)))))
 
+;; Wrapper script for Wayland sessions, similar to Xsession.
+;; Used to setup the environment.
+(define gdm-wayland-session-wrapper
+  (program-file
+   "gdm-wayland-session-wrapper"
+   #~((let* ((user (getpw (getuid)))
+	    (name (passwd:name user))
+	    (shell (passwd:shell user))
+	    (args (cdr (command-line))))
+        (if (string=? name "gdm")
+	    (apply execl (cons (car args) args))
+	    (execl shell shell "--login" "-c" (string-join args)))))))
+
 (define-record-type* <gdm-configuration>
   gdm-configuration make-gdm-configuration
   gdm-configuration?
@@ -884,7 +897,8 @@ the GNOME desktop environment.")
                       (default (xorg-configuration)))
   (x-session gdm-configuration-x-session
              (default (xinitrc)))
-  (wayland? gdm-configuration-wayland? (default #f)))
+  (wayland? gdm-configuration-wayland? (default #f))
+  (wayland-session gdm-configuration-wayland-session (default gdm-wayland-session-wrapper)))
 
 (define (gdm-configuration-file config)
   (mixed-text-file "gdm-custom.conf"
@@ -982,7 +996,10 @@ the GNOME desktop environment.")
                            ;; Add XCURSOR_PATH so that mutter can find its cursors.
                            ;; gdm doesn't login so doesn't source the corresponding
                            ;; line in /etc/profile
-                           "XCURSOR_PATH=/run/current-system/profile/share/icons"))))
+                           "XCURSOR_PATH=/run/current-system/profile/share/icons"
+                           (string-append
+                            "GDM_WAYLAND_SESSION="
+                            #$(gdm-configuration-wayland-session config))))))
          (stop #~(make-kill-destructor))
          (respawn? #t))))
 
