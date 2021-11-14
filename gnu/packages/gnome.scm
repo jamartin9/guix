@@ -7497,7 +7497,7 @@ to display dialog boxes from the commandline and shell scripts.")
 (define-public mutter
   (package
     (name "mutter")
-    (version "40.5")
+    (version "41.0")
     (source (origin
               (method url-fetch)
               (uri (string-append "mirror://gnome/sources/" name "/"
@@ -7505,54 +7505,120 @@ to display dialog boxes from the commandline and shell scripts.")
                                   name "-" version ".tar.xz"))
               (sha256
                (base32
-                "0bmd6p9qcwx0hv0y2bp33xjfaw4lyfkl55r0qn2cm04465riddny"))))
+                "17pqrm48kddqrc3fl96n5knhaxyn0crg0zv7zpmqhk848jks307s"))))
     ;; NOTE: Since version 3.21.x, mutter now bundles and exports forked
     ;; versions of cogl and clutter.  As a result, many of the inputs,
     ;; propagated-inputs, and configure flags used in cogl and clutter are
     ;; needed here as well.
     (build-system meson-build-system)
     (arguments
-     '(;; XXX: All mutter tests fail with the following error:
-       ;;   Settings schema 'org.gnome.mutter' is not installed
-       #:tests? #f
-       #:glib-or-gtk? #t
+     '(#:glib-or-gtk? #t
        #:configure-flags
        ;; TODO: Enable profiler when Sysprof is packaged.
        (list "-Dprofiler=false"
              ;; Otherwise, the RUNPATH will lack the final path component.
              (string-append "-Dc_link_args=-Wl,-rpath="
                             (assoc-ref %outputs "out") "/lib:"
-                            (assoc-ref %outputs "out") "/lib/mutter-8")
-
+                            (assoc-ref %outputs "out") "/lib/mutter-9")
+             ;; Disable systemd support.
+             "-Dsystemd=false"
              ;; The following flags are needed for the bundled clutter
              (string-append "-Dxwayland_path="
                             (assoc-ref %build-inputs "xorg-server-xwayland")
                             "/bin/Xwayland")
-
              ;; the remaining flags are needed for the bundled cogl
              (string-append "-Dopengl_libname="
                             (assoc-ref %build-inputs "mesa")
-                            "/lib/libGL.so"))
+                            "/lib/libGL.so")
+             (string-append "-Dgles2_libname="
+                            (assoc-ref %build-inputs "mesa")
+                            "/lib/libGLESv2.so")
+             "-Degl_device=true"         ;false by default
+             "-Dwayland_eglstream=true") ;false by default
+       #:test-options
+       (list "--verbose"
+             ;; FIXME: There are three (3) test suites: 'clutter', 'cogl' and
+             ;; 'core', of which only 'core' is currently failing with errors
+             ;; like:
+
+             ;; FIXME: The test suites takes way more time (from ~1m30 to 15m)
+             ;; in the build environment, due to python-dbusmock struggling to
+             ;; kill the dbus process with errors like "ERROR: timed out
+             ;; waiting for bus process to terminate" for unknown reasons
+             ;; (see:
+             ;; https://github.com/martinpitt/python-dbusmock/issues/47#issuecomment-972547988).
+             "--suite=clutter"
+             "--suite=cogl")
        #:phases
        (modify-phases %standard-phases
+         (add-after 'unpack 'patch-dlopen-calls
+           (lambda* (#:key inputs #:allow-other-keys)
+             (substitute* "src/wayland/meta-wayland-egl-stream.c"
+               (("libnvidia-egl-wayland.so.1")
+                (string-append (assoc-ref inputs "egl-wayland")
+                               "/lib/libnvidia-egl-wayland.so.1")))))
          (add-before 'configure 'set-udev-dir
            (lambda* (#:key inputs outputs #:allow-other-keys)
              (setenv "PKG_CONFIG_UDEV_UDEVDIR"
                      (string-append (assoc-ref outputs "out")
-                                    "/lib/udev")))))))
+                                    "/lib/udev"))))
+         (add-before 'check 'pre-check
+           ;; Install signal handlers to approximate what a PID 1 init would
+           ;; do to reap the doubly forked dbus processes spawned during
+           ;; tests.
+           (lambda _
+             (sigaction SIGCHLD (lambda () (waitpid WAIT_ANY WNOHANG)))))
+         (replace 'check
+           (lambda* (#:key inputs tests? test-options parallel-tests?
+                     #:allow-other-keys)
+             (when tests?
+               ;; Setup (see the 'test-mutter' CI target at
+               ;; https://gitlab.gnome.org/GNOME/mutter/-/raw/main/.gitlab-ci.yml).
+               (setenv "XDG_RUNTIME_DIR" "runtime-dir")
+               (setenv "GSETTINGS_SCHEMA_DIR" "data")
+               (setenv "MUTTER_DEBUG_DUMMY_MODE_SPECS" "800x600@10.0")
+               (setenv "PIPEWIRE_DEBUG" "2")
+               (setenv "PIPEWIRE_LOG" "meson-logs/pipewire.log")
+               (setenv "XVFB_SERVER_ARGS" "+iglx -noreset")
+               (setenv "G_SLICE" "always-malloc")
+               (setenv "MALLOC_CHECK" "3")
+               (setenv "NO_AT_BRIDGE" "1")
+               ;; This is needed, otherwise the "mutter:core+mutter/unit /
+               ;; anonymous-file" test would fail (see:
+               ;; https://gitlab.gnome.org/GNOME/mutter/-/issues/2017).
+               (setenv "CI_JOB_ID" "1")
+
+               (invoke "glib-compile-schemas" (getenv "GSETTINGS_SCHEMA_DIR"))
+               (mkdir-p (getenv "XDG_RUNTIME_DIR"))
+               (chmod (getenv "XDG_RUNTIME_DIR") #o755)
+               (invoke "pipewire" "--version") ;check for pipewire
+               (system "pipewire &")    ;always returns 0 due to forking
+
+               (setenv "MESON_TESTTHREADS"
+                       (if parallel-tests?
+                           (number->string (parallel-job-count))
+                           "1"))
+               (apply invoke "dbus-run-session" "--"
+                      "xvfb-run" "-a" "-s" (getenv "XVFB_SERVER_ARGS")
+                      "meson" "test" "-t" "10" "--print-errorlogs"
+                      test-options)))))))
     (native-inputs
      `(("desktop-file-utils" ,desktop-file-utils) ; for update-desktop-database
-       ("glib:bin" ,glib "bin") ; for glib-compile-schemas, etc.
+       ("glib:bin" ,glib "bin")         ; for glib-compile-schemas, etc.
        ("gobject-introspection" ,gobject-introspection)
        ("intltool" ,intltool)
        ("pkg-config" ,pkg-config)
-       ("xorg-server" ,xorg-server-for-tests)
+       ("xvfb-run" ,xvfb-run)
        ;; For git build
        ("autoconf" ,autoconf)
        ("automake" ,automake)
-       ("libtool" ,libtool)))
+       ("libtool" ,libtool)
+       ;; For tests.
+       ("pipewire" ,pipewire-0.3)
+       ("python-dbus" ,python-dbus)
+       ("python-dbusmock" ,python-dbusmock)))
     (propagated-inputs
-     `(;; libmutter.pc refers to these:
+     `( ;; libmutter.pc refers to these:
        ("gsettings-desktop-schemas" ,gsettings-desktop-schemas)
        ("gtk+" ,gtk+)
        ;; mutter-clutter-1.0.pc and mutter-cogl-1.0.pc refer to these:
@@ -7564,6 +7630,7 @@ to display dialog boxes from the commandline and shell scripts.")
        ("libinput" ,libinput)
        ("libx11" ,libx11)
        ("libxcomposite" ,libxcomposite)
+       ("libxcvt" ,libxcvt)
        ("libxdamage" ,libxdamage)
        ("libxext" ,libxext)
        ("libxfixes" ,libxfixes)
@@ -7575,7 +7642,8 @@ to display dialog boxes from the commandline and shell scripts.")
        ("udev" ,eudev)
        ("xinput" ,xinput)))
     (inputs
-     `(("elogind" ,elogind)
+     `(("egl-wayland" ,egl-wayland)     ;for wayland-eglstream-protocols
+       ("elogind" ,elogind)
        ("gnome-desktop" ,gnome-desktop)
        ("gnome-settings-daemon" ,gnome-settings-daemon)
        ("graphene" ,graphene)
@@ -7589,6 +7657,7 @@ to display dialog boxes from the commandline and shell scripts.")
        ("libxtst" ,libxtst)
        ("pipewire" ,pipewire-0.3)
        ("startup-notification" ,startup-notification)
+       ("sysprof" ,sysprof)
        ("upower-glib" ,upower)
        ("xkeyboard-config" ,xkeyboard-config)
        ("xorg-server-xwayland" ,xorg-server-xwayland)
