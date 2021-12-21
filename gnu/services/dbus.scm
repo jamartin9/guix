@@ -106,6 +106,7 @@ includes the @code{etc/dbus-1/system.d} directories of each package listed in
         (define (services->sxml services)
           ;; Return the SXML 'includedir' clauses for DIRS.
           `(busconfig
+            (limit (@ (name "auth_timeout")) "60000")
             (servicehelper "/run/setuid-programs/dbus-daemon-launch-helper")
 
             ;; First, the '.service' files of services subject to activation.
